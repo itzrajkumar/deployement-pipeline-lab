@@ -1,5 +1,6 @@
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
+import os
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -19,6 +20,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    server = HTTPServer(("0.0.0.0", 8000), Handler)
-    print("Service listening on port 8000", flush=True)
+    port = int(os.environ.get("PORT", "8000"))
+    server = HTTPServer(("0.0.0.0", port), Handler)
+    print(f"Service listening on port {port}", flush=True)
     server.serve_forever()
