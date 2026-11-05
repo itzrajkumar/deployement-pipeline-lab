@@ -1,45 +1,32 @@
 import json
-import subprocess
-import time
+import threading
 import unittest
 import urllib.request
-from urllib.error import URLError
+
+from app import create_server
 
 
 class ServiceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.process = subprocess.Popen(
-            ["python3", "app.py"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+        # Port 0 asks the operating system to choose an available port.
+        cls.server = create_server(host="127.0.0.1", port=0)
+        cls.port = cls.server.server_address[1]
+
+        cls.server_thread = threading.Thread(
+            target=cls.server.serve_forever,
+            daemon=True,
         )
-
-        health_url = "http://127.0.0.1:8000/health"
-        deadline = time.monotonic() + 5
-
-        while time.monotonic() < deadline:
-            if cls.process.poll() is not None:
-                raise RuntimeError("The service stopped before it became ready.")
-
-            try:
-                with urllib.request.urlopen(health_url, timeout=1):
-                    return
-            except URLError:
-                time.sleep(0.1)
-
-        cls.process.terminate()
-        cls.process.wait()
-        raise RuntimeError("The service did not become ready within 5 seconds.")
+        cls.server_thread.start()
 
     @classmethod
     def tearDownClass(cls):
-        if cls.process.poll() is None:
-            cls.process.terminate()
-            cls.process.wait()
+        cls.server.shutdown()
+        cls.server.server_close()
+        cls.server_thread.join()
 
     def test_health_endpoint(self):
-        url = "http://127.0.0.1:8000/health"
+        url = f"http://127.0.0.1:{self.port}/health"
 
         with urllib.request.urlopen(url) as response:
             data = json.loads(response.read())
