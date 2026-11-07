@@ -1,6 +1,6 @@
 # Deployment Pipeline Lab
 
-A beginner DevOps learning project that uses GitHub Actions to test a small Python service, build a Docker image, and publish it to GitHub Container Registry (GHCR).
+A learning project that tests a small Python service, builds a Docker image, publishes it to GitHub Container Registry (GHCR), and runs it in a local Kubernetes cluster.
 
 This is a learning demo only. It does not connect to financial systems, process real payments, or use customer data.
 
@@ -26,6 +26,8 @@ deployment-pipeline-lab/
 ├── .github/
 │   └── workflows/
 │       └── ci.yml
+├── k8s/
+│   └── app.yaml
 ├── .gitignore
 ├── app.py
 ├── Dockerfile
@@ -43,20 +45,31 @@ It:
 2. Sets up Python.
 3. Runs the automated health endpoint test.
 4. Builds the Docker image.
-5. On pushes to `main`, publishes the image to GHCR.
+5. Publishes the image to GHCR when code is pushed to `main`.
 
 Pull requests run the test and build steps, but do not publish an image.
 
-The published image supports both `linux/amd64` and `linux/arm64`. Docker selects the suitable version for the computer that downloads it.
+The published image supports both `linux/amd64` and `linux/arm64`. Docker selects a suitable version for the computer downloading it.
+
+The workflow uses GitHub's automatically created `GITHUB_TOKEN` to publish the image. It does not store a personal access token in the workflow. See [GitHub's guide to publishing Docker images](https://docs.github.com/en/actions/tutorials/publish-packages/publish-docker-images).
 
 ## Requirements
+
+For local development and Docker:
 
 - Python 3
 - Docker Desktop
 - Git
 - A GitHub account
 
-The service and test use Python's standard library; no additional Python packages are required.
+For the local Kubernetes section:
+
+- Docker Desktop running on your Mac
+- Homebrew
+- kind
+- kubectl
+
+The service and tests use Python's standard library; no extra Python packages are needed.
 
 ## Run locally
 
@@ -66,44 +79,52 @@ Start the service:
 python3 app.py
 ```
 
-Open <http://localhost:8000/health>. You should see the JSON health response shown above.
+Open [http://localhost:8000/health](http://localhost:8000/health). You should see the JSON health response shown above.
 
 Stop the service by returning to the terminal and pressing **Control+C**.
 
 ### Run the automated test
 
-Make sure the manually started service is stopped, then run:
+From the project directory, run:
 
 ```bash
 python3 -m unittest -v
 ```
 
-The test starts the service, requests `/health`, and checks the response.
+The test starts the service inside the test process on a temporary available port, requests `/health`, checks the response, and shuts the test server down. It does not require port 8000 to be free.
 
 ## Build and run with Docker
 
-Build the image from the project folder:
+Build the image from the project directory:
 
 ```bash
-docker build -t deployment-pipeline-lab .
+docker build -t deployment-pipeline-lab:latest .
 ```
 
 Start a container:
 
 ```bash
-docker run --rm -p 8000:8000 --name deployment-pipeline-lab deployment-pipeline-lab
+docker run --rm -p 8000:8000 --name deployment-pipeline-lab deployment-pipeline-lab:latest
 ```
 
-Open <http://localhost:8000/health> to check it. Stop the container with **Control+C**.
+Open [http://localhost:8000/health](http://localhost:8000/health) to check it. Stop the container with **Control+C**.
+
+If port 8000 is already in use, you can map a different Mac port:
+
+```bash
+docker run --rm -p 8001:8000 --name deployment-pipeline-lab deployment-pipeline-lab:latest
+```
+
+Then open [http://localhost:8001/health](http://localhost:8001/health).
 
 ## Pull and run the image from GHCR
 
-The workflow publishes these tags:
+The workflow publishes image tags to GHCR:
 
 - `latest` points to the most recently published image.
-- `sha-<commit-id>` identifies the exact commit used to build an image.
+- `sha-<commit-id>` identifies an image built from a specific commit.
 
-The package is private. To download it from a Mac, authenticate Docker to GHCR with a GitHub personal access token (classic) that has the `read:packages` scope. Keep the token private; never put it in this repository or share it. GitHub documents this authentication method for private container packages. [GHCR authentication documentation](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry)
+The package is private. To download it, authenticate Docker to GHCR using a GitHub personal access token (classic) with the `read:packages` permission. Keep the token private. Never put it in this repository or share it. See [GitHub's Container registry documentation](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry).
 
 Sign Docker in to GHCR:
 
@@ -125,18 +146,151 @@ Run the published image:
 docker run --rm -p 8000:8000 ghcr.io/OWNER/IMAGE:latest
 ```
 
-Open <http://localhost:8000/health> to check it. Stop the container with **Control+C**.
+Open [http://localhost:8000/health](http://localhost:8000/health) to check it. Stop the container with **Control+C**.
 
-The workflow uses GitHub's automatically created `GITHUB_TOKEN` to publish the image; no personal token is stored in the workflow. [GitHub Actions package publishing guide](https://docs.github.com/en/actions/tutorials/publish-packages/publish-docker-images)
+## Local Kubernetes deployment
+
+The project can also run in a local Kubernetes cluster using kind. kind runs the cluster using Docker containers on your Mac. This setup does not deploy to a cloud provider or require a cloud account.
+
+### Install the tools
+
+Install kind and kubectl with Homebrew:
+
+```bash
+brew install kind kubectl
+```
+
+Make sure Docker Desktop is open and running.
+
+### Build the image and create a cluster
+
+From the project directory, build the image:
+
+```bash
+docker build -t deployment-pipeline-lab:latest .
+```
+
+Create the local cluster:
+
+```bash
+kind create cluster --name deployment-lab --wait 60s
+```
+
+This command is needed the first time you create the cluster. If the `deployment-lab` cluster already exists, you can skip this step.
+
+Load the image into kind so the cluster can use the image built on your Mac:
+
+```bash
+kind load docker-image deployment-pipeline-lab:latest --name deployment-lab
+```
+
+Apply the Kubernetes configuration:
+
+```bash
+kubectl apply -f k8s/app.yaml
+```
+
+Check the Deployment, Pods, and Service:
+
+```bash
+kubectl get deployment,pods,service
+```
+
+The Deployment requests two app Pods. Readiness and liveness probes check the `/health` endpoint.
+
+### Check the Kubernetes health endpoint
+
+Start port forwarding:
+
+```bash
+kubectl port-forward service/deployment-pipeline-lab 8080:80
+```
+
+Leave that terminal running. In another terminal, check the response:
+
+```bash
+curl http://localhost:8080/health
+```
+
+You can also open [http://localhost:8080/health](http://localhost:8080/health) in a browser. The endpoint displays JSON, not an HTML website.
+
+Press **Control+C** in the port-forward terminal when finished.
+
+### Practice recovery
+
+Kubernetes maintains the number of app copies specified by the Deployment. To see it replace a Pod:
+
+1. List the Pods:
+
+   ```bash
+   kubectl get pods
+   ```
+
+2. Delete one Pod by replacing `<pod-name>` with one of the names shown:
+
+   ```bash
+   kubectl delete pod <pod-name>
+   ```
+
+3. List the Pods again:
+
+   ```bash
+   kubectl get pods
+   ```
+
+Kubernetes should create a replacement Pod so that two app Pods are running again.
+
+### Practice scaling
+
+Scale the app to three Pods:
+
+```bash
+kubectl scale deployment deployment-pipeline-lab --replicas=3
+kubectl get pods
+```
+
+Return it to the two replicas declared in `k8s/app.yaml`:
+
+```bash
+kubectl scale deployment deployment-pipeline-lab --replicas=2
+kubectl get pods
+```
+
+The scale command changes the running Deployment. The saved `k8s/app.yaml` remains the configuration to apply from the project.
+
+### Clean up the local Kubernetes setup
+
+Remove the app resources:
+
+```bash
+kubectl delete -f k8s/app.yaml
+```
+
+Delete the local cluster when you no longer need it:
+
+```bash
+kind delete cluster --name deployment-lab
+```
+
+Deleting the cluster removes its Kubernetes resources and containers. The Docker image built on your Mac remains available until you remove it separately.
 
 ## Current scope
 
-This project automates testing and image building, publishes a multi-platform image to GHCR, and verifies that the published image runs locally.
+This project demonstrates:
 
-It does not deploy the service to a cloud environment yet. Cloud deployment can be added as a later learning stage.
+- Automated testing with GitHub Actions
+- Building and publishing a multi-platform Docker image
+- Running a container locally
+- Deploying the app to a local Kubernetes cluster
+- Checking app health with Kubernetes probes
+- Replacing a deleted Pod
+- Scaling the app up and down
+
+It does not deploy the service to a cloud environment.
 
 ## Limitations
 
 - The service only provides a health endpoint; it does not implement payment processing.
 - This is a learning project and is not designed for production use.
 - The GHCR package is private and requires authentication to download.
+- The Kubernetes cluster runs locally on the Mac and uses local computer resources.

@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deployment-pipeline-lab
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: deployment-pipeline-lab
+  template:
+    metadata:
+      labels:
+        app: deployment-pipeline-lab
+    spec:
+      containers:
+        - name: app
+          image: deployment-pipeline-lab:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8000
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: deployment-pipeline-lab
+spec:
+  selector:
+    app: deployment-pipeline-lab
+  ports:
+    - port: 80
+      targetPort: http
