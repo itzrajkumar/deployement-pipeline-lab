@@ -18,6 +18,14 @@ Example health response:
   "service": "deployment-pipeline-lab"
 }
 ```
+- Provides a version endpoint at `GET /version`
+- Returns the app version, which defaults to `1.0.0` or can be set with the `APP_VERSION` environment variable
+
+{
+  "service": "deployment-pipeline-lab",
+  "version": "1.0.0"
+}
+
 
 ## Project structure
 
@@ -294,3 +302,24 @@ It does not deploy the service to a cloud environment.
 - This is a learning project and is not designed for production use.
 - The GHCR package is private and requires authentication to download.
 - The Kubernetes cluster runs locally on the Mac and uses local computer resources.
+
+### Practice a rollout and rollback
+
+Build and load a new image:
+
+```bash
+docker build -t deployment-pipeline-lab:v2 .
+kind load docker-image deployment-pipeline-lab:v2 --name deployment-lab
+
+Tell Kubernetes to use the new image and wait for the update to finish:
+kubectl set image deployment/deployment-pipeline-lab app=deployment-pipeline-lab:v2
+kubectl rollout status deployment/deployment-pipeline-lab
+Check the new endpoint through the port-forward:
+curl http://localhost:8080/version
+Roll back to the previous Deployment revision:
+kubectl rollout undo deployment/deployment-pipeline-lab
+kubectl rollout status deployment/deployment-pipeline-lab
+Check the active image and endpoints after the rollback:
+kubectl get deployment deployment-pipeline-lab -o jsonpath='{.spec.template.spec.containers[0].image}{"\n"}'
+curl http://localhost:8080/health
+In this exercise, the earlier latest image did not include /version, so that endpoint returned 404 after rollback while /health continued to respond.

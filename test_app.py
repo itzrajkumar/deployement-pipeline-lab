@@ -9,7 +9,6 @@ from app import create_server
 class ServiceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        # Port 0 asks the operating system to choose an available port.
         cls.server = create_server(host="127.0.0.1", port=0)
         cls.port = cls.server.server_address[1]
 
@@ -34,6 +33,16 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(response.status, 200)
         self.assertEqual(data["status"], "ok")
         self.assertEqual(data["service"], "deployment-pipeline-lab")
+
+    def test_version_endpoint(self):
+        url = f"http://127.0.0.1:{self.port}/version"
+
+        with urllib.request.urlopen(url) as response:
+            data = json.loads(response.read())
+
+        self.assertEqual(response.status, 200)
+        self.assertEqual(data["service"], "deployment-pipeline-lab")
+        self.assertEqual(data["version"], "1.0.0")
 
 
 if __name__ == "__main__":
